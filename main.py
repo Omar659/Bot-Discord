@@ -1,6 +1,7 @@
 import discord
 from discord.ext import commands
 import os
+from os import system
 from keep_alive import keep_alive
 import time
 # from discord.ui import Button
@@ -274,5 +275,11 @@ class MyBot(commands.Bot):
 
 
 keep_alive()
-bot = MyBot(command_prefix="%", self_bot=False)
-bot.run(os.getenv('TOKEN'))
+try:
+    bot = MyBot(command_prefix="%", self_bot=False)
+    bot.run(os.getenv('TOKEN'))
+except discord.errors.HTTPException as e:
+    if str(e.status) == "429":
+        print("\n\n\nBLOCKED BY RATE LIMITS\nRESTARTING NOW\n\n\n")
+        system("python restarter.py")
+        system('kill 1')
