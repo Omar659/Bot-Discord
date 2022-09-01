@@ -181,7 +181,7 @@ class MyBot(commands.Bot):
 
                     loop.run_until_complete(self.callback(audio_tts))
                     loop.close()
-                time.sleep(0.1)
+                time.sleep(1)
         except:
             audio_tts = os.listdir(self.message_audio_path)
             for audio in audio_tts:
