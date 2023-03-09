@@ -1,5 +1,6 @@
 import discord
 from discord.ext import commands
+import shutil
 import os
 from os import system
 from keep_alive import keep_alive
@@ -11,7 +12,8 @@ import asyncio
 import random
 
 bots_name = ["Neeko"]
-bots_prefix = ["!"]
+sound_prefix = "-"
+bots_prefix = ["!", sound_prefix]
 welcome_messages = [
     "Che gioia averti tra noi _nome_. Benvenuto!",
     "Stare qui non aveva senso senza di te. Benvenuto _nome_!",
@@ -29,6 +31,8 @@ welcome_messages = [
     "_nome_, benvenuto nel server. Entra e mettiti comodo"
 ]
 
+sounds = {sound_prefix + "vito au": ["vito_au.mp3", "Il dolce ululato di vito"],
+          sound_prefix + "osass": ["osass.mp3", "Un bellissimo nome"]}
 
 class MyBot(commands.Bot):
     def __init__(self, command_prefix, self_bot):
@@ -67,7 +71,7 @@ class MyBot(commands.Bot):
             )
         except Exception as e:
             print("\t" + str(e))
-
+            
     #################
     # system events #
     #################
@@ -79,7 +83,8 @@ class MyBot(commands.Bot):
         name = member.name if str(member.nick) == str(None) else member.nick
         if name in bots_name or name == str(self.user.name):
             return
-
+        if member.name == "ciao986":
+            name = "Vito"
         if before.channel == None:
             welcome_message = random.choice(welcome_messages)
             if member.name == "Light":
@@ -136,8 +141,20 @@ class MyBot(commands.Bot):
         if (message.author == self.user
                 or message.content == self.command_prefix + "join"
                 or message.content[0] in bots_prefix or name in bots_name):
+            if message.content[0] == sound_prefix:
+                if message.content.lower() == "-sounds":
+                    helper = "Sound commands:"
+                    for command, value in sounds.items():
+                        helper += "\n\t\"" + command + "\": " + value[1]
+                    await ctx.send(helper)
+                elif sounds.get(message.content.lower()) != None:
+                    sound_name = sounds[message.content.lower()][0]
+                    await self.save_sound_board_message(sound_name, message.author.voice.channel)
+                else:
+                    await ctx.send("Sound not found")
+            # elif message.content[0] == other_prefix: #TODO
             return
-
+        
         print("on_message:")
         print("\tcontenuto messaggeio: ", message.content)
 
@@ -145,32 +162,17 @@ class MyBot(commands.Bot):
         if message.channel.name == "chat-bot":
             # last_audio_number = self.generate_idx_message()
             message_to_save1 = str(message.content)
-            message_to_save2 = str(name) + " dice: " + message_to_save1
+            name_dice = str(name) if str(name) != "ciao986" else "Vito"
+            message_to_save2 = str(name_dice) + " dice: " + message_to_save1
             await self.save_message(message_to_save1, message_to_save2, name,
                                     message.author.voice.channel, False)
-            # self.save_audio_message(
-            #     message_to_save1,
-            #     name,
-            #     message.author.voice.channel,
-            #     last_audio_number
-            # )
-            # self.save_audio_message(
-            #     message_to_save2,
-            #     name,
-            #     message.author.voice.channel,
-            #     last_audio_number,
-            #     True
-            # )
-            # if not self.play_messages_is_run:
-            #     play_messages_thread = threading.Thread(target=self.play_messages)
-            #     play_messages_thread.start()
 
     ###########
     # Utility #
     ###########
     def play_messages(self):
         try:
-            # repeat until the message audio folder is empty
+        # repeat until the message audio folder is empty
             while os.listdir(self.message_audio_path) != []:
                 self.play_messages_is_run = True
                 audio_tts = os.listdir(self.message_audio_path)
@@ -178,7 +180,7 @@ class MyBot(commands.Bot):
                 if audio_tts != []:
                     loop = asyncio.new_event_loop()
                     asyncio.set_event_loop(loop)
-
+    
                     loop.run_until_complete(self.callback(audio_tts))
                     loop.close()
                 time.sleep(1)
@@ -191,7 +193,9 @@ class MyBot(commands.Bot):
     async def callback(self, audio_tts):
         # play the text to speech audio
         print("callback:")
-        if audio_tts[0].split("_")[4][:-4] == "False":
+        if audio_tts[0].split("_")[1] == "bot":
+            audio2play = audio_tts[0]
+        elif audio_tts[0].split("_")[4][:-4] == "False":
             if self.last_message_name != audio_tts[0].split("_")[1]:
                 self.last_message_name = audio_tts[0].split("_")[1]
                 audio2play = audio_tts[0] if audio_tts[0].split("_")[2] == str(
@@ -201,8 +205,9 @@ class MyBot(commands.Bot):
                     False) else audio_tts[1]
         else:
             audio2play = audio_tts[0]
-        audio2notPlay = audio_tts[
-            0] if audio_tts[0] != audio2play else audio_tts[1]
+        if audio_tts[0].split("_")[1] != "bot":
+            audio2notPlay = audio_tts[
+                0] if audio_tts[0] != audio2play else audio_tts[1]
         audio_source = await discord.FFmpegOpusAudio.from_probe(
             self.message_audio_path + audio2play)
         await self.voice_client.move_to(self.channels_audio[audio2play])
@@ -220,7 +225,8 @@ class MyBot(commands.Bot):
             time.sleep(0.1)
         # remove audio
         os.remove(self.message_audio_path + audio2play)
-        os.remove(self.message_audio_path + audio2notPlay)
+        if audio_tts[0].split("_")[1] != "bot":
+            os.remove(self.message_audio_path + audio2notPlay)
 
     def generate_idx_message(self):
         audio_tts = os.listdir(self.message_audio_path)
@@ -273,6 +279,19 @@ class MyBot(commands.Bot):
             play_messages_thread = threading.Thread(target=self.play_messages)
             play_messages_thread.start()
 
+    async def save_sound_board_message(self, sound_name, channel):
+        if self.voice_client is None:
+            self.voice_client = await channel.connect()
+        last_audio_number = self.generate_idx_message() + 1
+        src_file = "./sound_board/" + sound_name
+        dst_folder = "./message_audio/"
+        new_file_name = str(last_audio_number) + "_bot_" + sound_name
+        self.channels_audio[new_file_name] = channel
+        dst_file = os.path.join(dst_folder, new_file_name)
+        shutil.copy(src_file, dst_file)
+        if not self.play_messages_is_run:
+            play_messages_thread = threading.Thread(target=self.play_messages)
+            play_messages_thread.start()
 
 keep_alive()
 try:
