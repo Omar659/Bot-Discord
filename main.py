@@ -11,7 +11,7 @@ import threading
 import asyncio
 import random
 
-bots_name = ["Neeko"]
+bots_name = ["Neeko", "Lo Zozzone"]
 sound_prefix = "-"
 bots_prefix = ["!", sound_prefix]
 welcome_messages = [
@@ -33,8 +33,26 @@ welcome_messages = [
 
 sounds = {sound_prefix + "baka": 
                         ["baka.mp3", "Baka detto in modo carino"],
+          sound_prefix + "banishment": 
+                        ["banishment.ogg", "Chuunibyou \"Banishment this warudo\""],
           sound_prefix + "chance boru": 
                         ["chance boru.mp3", "Dal nostro haycoso... CHANCE BORUUU"],
+          sound_prefix + "eliminato": 
+                        ["eliminato.ogg", "Teru Mikami, ELIMINATO ELIMINATOOOOOO"],
+          sound_prefix + "eren": 
+                        ["eren.ogg", "Subete no yimiru no taminitsugu... Ore no na wa... Eren Yega"],
+          sound_prefix + "kira risata": 
+                        ["kira laugh.mp3", "KIRA AHAHAHAHAAHAHAHAHAHAHA"],
+          sound_prefix + "patatina": 
+                        ["kira patatina.ogg", "Prendo una patatina... e me la mangio"],
+          sound_prefix + "lelouch eng": 
+                        ["lelouch die.mp3", "Lelouch vi ordina, a tutti voi, di morire. [ENG]"],
+          sound_prefix + "lelouch ita": 
+                        ["lelouch morire.ogg", "Lelouch vi ordina, a tutti voi, di morire. [ITA]"],
+          sound_prefix + "lelouch jap": 
+                        ["lelouch scine.ogg", "Lelouch vi ordina, a tutti voi, di morire. [JAP]"],
+          sound_prefix + "lo sapevo": 
+                        ["lo sapevo.ogg", "KIRA LO SAPEVO LO SAPEVO LO SAPEVO!"],
           sound_prefix + "mendokuse": 
                         ["mendokse.mp3", "Shikamaru: Ah... mendokuse"],
           sound_prefix + "nandomo": 
@@ -45,18 +63,30 @@ sounds = {sound_prefix + "baka":
                         ["o kawaii koto.mp3", "Kaguya sama <3"],
           sound_prefix + "osass":        
                         ["osass.mp3", "Un bellissimo nome"],
+          sound_prefix + "osu":        
+                        ["osu.mp3", "Welcome to osu!"],
           sound_prefix + "owo":          
                         ["OwO.mp3", "OwO sound"],
           sound_prefix + "porco schifo": 
                         ["porco schifo.mp3", "Porco schifo è uno sballo mi piace"],
+          sound_prefix + "quanto a te": 
+                        ["quanto a te.ogg", "Il bellissimo doppiaggio italiano di Evangelion"],
+          sound_prefix + "rero": 
+                        ["rero rero.ogg", "JOJO RERO RERO RERO"],
           sound_prefix + "sium": 
                         ["sium.mp3", "SIUUUUUUUM"],
+          sound_prefix + "sugoi": 
+                        ["sugoi.mp3", "Sugoi sugoi di Marin Kitagawa"],
+          sound_prefix + "tatakae": 
+                        ["tatakae.mp3", "Eren tatakae"],
           sound_prefix + "uwu": 
                         ["UwU.mp3", "UwU sound"],
           sound_prefix + "vito au": 
-                        ["vito_au.mp3", "Il dolce ululato di vito"],
+                        ["vito au.ogg", "Il dolce ululato di vito"],
           sound_prefix + "waku": 
-                        ["waku waku.mp3", "Anya Waku Waku"]}
+                        ["waku waku.mp3", "Anya Waku Waku"],
+          sound_prefix + "za warudo": 
+                        ["za warudo.mp3", "ZA WARUDO DIO BRANDO"]}
 
 class MyBot(commands.Bot):
     def __init__(self, command_prefix, self_bot):
@@ -162,14 +192,28 @@ class MyBot(commands.Bot):
         ctx = await self.get_context(message)
         await self.join(ctx)
         # if is some message from bot
+        if name in bots_name:
+            return
         if (message.author == self.user
                 or message.content == self.command_prefix + "join"
-                or message.content[0] in bots_prefix or name in bots_name):
+                or message.content[0] in bots_prefix):
             if message.content[0] == sound_prefix:
                 if message.content.lower() == "-sounds":
-                    helper = "Sound commands:"
+                    maxlen = 0
+                    for command in sounds.keys():
+                        if maxlen < len(command):
+                            maxlen = len(command)
+                    helper = "COMMANDS"
+                    helper += "    " + " "*(maxlen - len(helper)) + "DESCRIPTIONS"
+                    title = "SOUND COMMANDS"
+                    title_offset = "-"*(len(helper)//2 - len(title)//2)
+                    helper = "```" + title_offset + title + title_offset + "\n" + helper
                     for command, value in sounds.items():
-                        helper += "\n\t\"" + command + "\": " + value[1]
+                        spaces = maxlen - len(command)
+                        # if tabs == 0:
+                        #     tabs = 1
+                        helper += "\n" + command + "\t" + " "*spaces + value[1]
+                    helper +=  "```"
                     await ctx.send(helper)
                 elif sounds.get(message.content.lower()) != None:
                     sound_name = sounds[message.content.lower()][0]
@@ -237,7 +281,7 @@ class MyBot(commands.Bot):
             audio2notPlay = audio_tts[
                 0] if audio_tts[0] != audio2play else audio_tts[1]
         audio_source = await discord.FFmpegOpusAudio.from_probe(
-            self.message_audio_path + audio2play)
+            self.message_audio_path + audio2play, options = '-filter:a loudnorm')
         await self.voice_client.move_to(self.channels_audio[audio2play])
         # when the bot switch channel the voice client change
         # so I catch the error and I rerun the command untill it work
