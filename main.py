@@ -31,8 +31,32 @@ welcome_messages = [
     "_nome_, benvenuto nel server. Entra e mettiti comodo"
 ]
 
-sounds = {sound_prefix + "vito au": ["vito_au.mp3", "Il dolce ululato di vito"],
-          sound_prefix + "osass": ["osass.mp3", "Un bellissimo nome"]}
+sounds = {sound_prefix + "baka": 
+                        ["baka.mp3", "Baka detto in modo carino"],
+          sound_prefix + "chance boru": 
+                        ["chance boru.mp3", "Dal nostro haycoso... CHANCE BORUUU"],
+          sound_prefix + "mendokuse": 
+                        ["mendokse.mp3", "Shikamaru: Ah... mendokuse"],
+          sound_prefix + "nandomo": 
+                        ["nandomo.mp3", "Sasuke che si incazza"],
+          sound_prefix + "nino1":
+                        ["nino love vacation.mp3", "Nino che rompe le palle con \"love vacation\""],
+          sound_prefix + "o kawaii koto": 
+                        ["o kawaii koto.mp3", "Kaguya sama <3"],
+          sound_prefix + "osass":        
+                        ["osass.mp3", "Un bellissimo nome"],
+          sound_prefix + "owo":          
+                        ["OwO.mp3", "OwO sound"],
+          sound_prefix + "porco schifo": 
+                        ["porco schifo.mp3", "Porco schifo è uno sballo mi piace"],
+          sound_prefix + "sium": 
+                        ["sium.mp3", "SIUUUUUUUM"],
+          sound_prefix + "uwu": 
+                        ["UwU.mp3", "UwU sound"],
+          sound_prefix + "vito au": 
+                        ["vito_au.mp3", "Il dolce ululato di vito"],
+          sound_prefix + "waku": 
+                        ["waku waku.mp3", "Anya Waku Waku"]}
 
 class MyBot(commands.Bot):
     def __init__(self, command_prefix, self_bot):
@@ -84,7 +108,7 @@ class MyBot(commands.Bot):
         if name in bots_name or name == str(self.user.name):
             return
         if member.name == "ciao986":
-            name = "Vito"
+            name = "Vito" if random.random() > 0.3 else "Guido"
         if before.channel == None:
             welcome_message = random.choice(welcome_messages)
             if member.name == "Light":
@@ -162,7 +186,11 @@ class MyBot(commands.Bot):
         if message.channel.name == "chat-bot":
             # last_audio_number = self.generate_idx_message()
             message_to_save1 = str(message.content)
-            name_dice = str(name) if str(name) != "ciao986" else "Vito"
+            name_dice = ""
+            if "Vito" not in str(name):
+                name_dice = str(name)
+            else:
+                name_dice = str(name) if random.random() > 0.3 else str(name).replace("Vito", "Guido")
             message_to_save2 = str(name_dice) + " dice: " + message_to_save1
             await self.save_message(message_to_save1, message_to_save2, name,
                                     message.author.voice.channel, False)
