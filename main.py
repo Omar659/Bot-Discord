@@ -14,6 +14,15 @@ import random
 bots_name = ["Neeko", "Lo Zozzone"]
 sound_prefix = "-"
 bots_prefix = ["!", sound_prefix]
+names_om = [
+    "L'invincibile", "Il maestro supremo", "Il dominatore incontrastato",
+    "L'artefice di ogni vittoria", "Il colosso imprendibile",
+    "Il signore del destino", "L'occhio che tutto vede",
+    "Il supremo comandante", "L'imperatore immortale.", "Il principe oscuro",
+    "L'incubo degli avversari", "Il cavaliere errante", "L'ombra silenziosa",
+    "Il guardiano delle tenebre", "L'architetto del caos", "Il mago supremo",
+    "Il dio della guerra", "Il giustiziere implacabile"
+]
 welcome_messages = [
     "Che gioia averti tra noi _nome_. Benvenuto!",
     "Stare qui non aveva senso senza di te. Benvenuto _nome_!",
@@ -31,62 +40,54 @@ welcome_messages = [
     "_nome_, benvenuto nel server. Entra e mettiti comodo"
 ]
 
-sounds = {sound_prefix + "baka": 
-                        ["baka.mp3", "Baka detto in modo carino"],
-          sound_prefix + "banishment": 
-                        ["banishment.ogg", "Chuunibyou \"Banishment this warudo\""],
-          sound_prefix + "chance boru": 
-                        ["chance boru.mp3", "Dal nostro haycoso... CHANCE BORUUU"],
-          sound_prefix + "eliminato": 
-                        ["eliminato.ogg", "Teru Mikami, ELIMINATO ELIMINATOOOOOO"],
-          sound_prefix + "eren": 
-                        ["eren.ogg", "Subete no yimiru no taminitsugu... Ore no na wa... Eren Yega"],
-          sound_prefix + "kira risata": 
-                        ["kira laugh.mp3", "KIRA AHAHAHAHAAHAHAHAHAHAHA"],
-          sound_prefix + "patatina": 
-                        ["kira patatina.ogg", "Prendo una patatina... e me la mangio"],
-          sound_prefix + "lelouch eng": 
-                        ["lelouch die.mp3", "Lelouch vi ordina, a tutti voi, di morire. [ENG]"],
-          sound_prefix + "lelouch ita": 
-                        ["lelouch morire.ogg", "Lelouch vi ordina, a tutti voi, di morire. [ITA]"],
-          sound_prefix + "lelouch jap": 
-                        ["lelouch scine.ogg", "Lelouch vi ordina, a tutti voi, di morire. [JAP]"],
-          sound_prefix + "lo sapevo": 
-                        ["lo sapevo.ogg", "KIRA LO SAPEVO LO SAPEVO LO SAPEVO!"],
-          sound_prefix + "mendokuse": 
-                        ["mendokse.mp3", "Shikamaru: Ah... mendokuse"],
-          sound_prefix + "nandomo": 
-                        ["nandomo.mp3", "Sasuke che si incazza"],
-          sound_prefix + "nino1":
-                        ["nino love vacation.mp3", "Nino che rompe le palle con \"love vacation\""],
-          sound_prefix + "o kawaii koto": 
-                        ["o kawaii koto.mp3", "Kaguya sama <3"],
-          sound_prefix + "osass":        
-                        ["osass.mp3", "Un bellissimo nome"],
-          sound_prefix + "osu":        
-                        ["osu.mp3", "Welcome to osu!"],
-          sound_prefix + "owo":          
-                        ["OwO.mp3", "OwO sound"],
-          sound_prefix + "porco schifo": 
-                        ["porco schifo.mp3", "Porco schifo è uno sballo mi piace"],
-          sound_prefix + "quanto a te": 
-                        ["quanto a te.ogg", "Il bellissimo doppiaggio italiano di Evangelion"],
-          sound_prefix + "rero": 
-                        ["rero rero.ogg", "JOJO RERO RERO RERO"],
-          sound_prefix + "sium": 
-                        ["sium.mp3", "SIUUUUUUUM"],
-          sound_prefix + "sugoi": 
-                        ["sugoi.mp3", "Sugoi sugoi di Marin Kitagawa"],
-          sound_prefix + "tatakae": 
-                        ["tatakae.mp3", "Eren tatakae"],
-          sound_prefix + "uwu": 
-                        ["UwU.mp3", "UwU sound"],
-          sound_prefix + "vito au": 
-                        ["vito au.ogg", "Il dolce ululato di vito"],
-          sound_prefix + "waku": 
-                        ["waku waku.mp3", "Anya Waku Waku"],
-          sound_prefix + "za warudo": 
-                        ["za warudo.mp3", "ZA WARUDO DIO BRANDO"]}
+sounds = {
+    sound_prefix + "baka": ["baka.mp3", "Baka detto in modo carino"],
+    sound_prefix + "banishment":
+    ["banishment.ogg", "Chuunibyou \"Banishment this warudo\""],
+    sound_prefix + "chance boru":
+    ["chance boru.mp3", "Dal nostro haycoso... CHANCE BORUUU"],
+    sound_prefix + "eliminato":
+    ["eliminato.ogg", "Teru Mikami, ELIMINATO ELIMINATOOOOOO"],
+    sound_prefix + "eren": [
+        "eren.ogg",
+        "Subete no yimiru no taminitsugu... Ore no na wa... Eren Yega"
+    ],
+    sound_prefix + "kira risata":
+    ["kira laugh.mp3", "KIRA AHAHAHAHAAHAHAHAHAHAHA"],
+    sound_prefix + "patatina":
+    ["kira patatina.ogg", "Prendo una patatina... e me la mangio"],
+    sound_prefix + "lelouch eng":
+    ["lelouch die.mp3", "Lelouch vi ordina, a tutti voi, di morire. [ENG]"],
+    sound_prefix + "lelouch ita":
+    ["lelouch morire.ogg", "Lelouch vi ordina, a tutti voi, di morire. [ITA]"],
+    sound_prefix + "lelouch jap":
+    ["lelouch scine.ogg", "Lelouch vi ordina, a tutti voi, di morire. [JAP]"],
+    sound_prefix + "lo sapevo":
+    ["lo sapevo.ogg", "KIRA LO SAPEVO LO SAPEVO LO SAPEVO!"],
+    sound_prefix + "mendokuse": ["mendokse.mp3", "Shikamaru: Ah... mendokuse"],
+    sound_prefix + "nandomo": ["nandomo.mp3", "Sasuke che si incazza"],
+    sound_prefix + "nino1": [
+        "nino love vacation.mp3",
+        "Nino che rompe le palle con \"love vacation\""
+    ],
+    sound_prefix + "o kawaii koto": ["o kawaii koto.mp3", "Kaguya sama <3"],
+    sound_prefix + "osass": ["osass.mp3", "Un bellissimo nome"],
+    sound_prefix + "osu": ["osu.mp3", "Welcome to osu!"],
+    sound_prefix + "owo": ["OwO.mp3", "OwO sound"],
+    sound_prefix + "porco schifo":
+    ["porco schifo.mp3", "Porco schifo è uno sballo mi piace"],
+    sound_prefix + "quanto a te":
+    ["quanto a te.ogg", "Il bellissimo doppiaggio italiano di Evangelion"],
+    sound_prefix + "rero": ["rero rero.ogg", "JOJO RERO RERO RERO"],
+    sound_prefix + "sium": ["sium.mp3", "SIUUUUUUUM"],
+    sound_prefix + "sugoi": ["sugoi.mp3", "Sugoi sugoi di Marin Kitagawa"],
+    sound_prefix + "tatakae": ["tatakae.mp3", "Eren tatakae"],
+    sound_prefix + "uwu": ["UwU.mp3", "UwU sound"],
+    sound_prefix + "vito au": ["vito au.ogg", "Il dolce ululato di vito"],
+    sound_prefix + "waku": ["waku waku.mp3", "Anya Waku Waku"],
+    sound_prefix + "za warudo": ["za warudo.mp3", "ZA WARUDO DIO BRANDO"]
+}
+
 
 class MyBot(commands.Bot):
     def __init__(self, command_prefix, self_bot):
@@ -125,7 +126,7 @@ class MyBot(commands.Bot):
             )
         except Exception as e:
             print("\t" + str(e))
-            
+
     #################
     # system events #
     #################
@@ -139,6 +140,9 @@ class MyBot(commands.Bot):
             return
         if member.name == "ciao986":
             name = "Vito" if random.random() > 0.3 else "Guido"
+        if member.name == "Omar97":
+            name = name + ', anche chiamato "' + random.choice(
+                names_om) + '", '
         if before.channel == None:
             welcome_message = random.choice(welcome_messages)
             if member.name == "Light":
@@ -204,25 +208,28 @@ class MyBot(commands.Bot):
                         if maxlen < len(command):
                             maxlen = len(command)
                     helper = "COMMANDS"
-                    helper += "    " + " "*(maxlen - len(helper)) + "DESCRIPTIONS"
+                    helper += "    " + " " * (maxlen -
+                                              len(helper)) + "DESCRIPTIONS"
                     title = "SOUND COMMANDS"
-                    title_offset = "-"*(len(helper)//2 - len(title)//2)
+                    title_offset = "-" * (len(helper) // 2 - len(title) // 2)
                     helper = "```" + title_offset + title + title_offset + "\n" + helper
                     for command, value in sounds.items():
                         spaces = maxlen - len(command)
                         # if tabs == 0:
                         #     tabs = 1
-                        helper += "\n" + command + "\t" + " "*spaces + value[1]
-                    helper +=  "```"
+                        helper += "\n" + command + "\t" + " " * spaces + value[
+                            1]
+                    helper += "```"
                     await ctx.send(helper)
                 elif sounds.get(message.content.lower()) != None:
                     sound_name = sounds[message.content.lower()][0]
-                    await self.save_sound_board_message(sound_name, message.author.voice.channel)
+                    await self.save_sound_board_message(
+                        sound_name, message.author.voice.channel)
                 else:
                     await ctx.send("Sound not found")
             # elif message.content[0] == other_prefix: #TODO
             return
-        
+
         print("on_message:")
         print("\tcontenuto messaggeio: ", message.content)
 
@@ -234,7 +241,10 @@ class MyBot(commands.Bot):
             if "Vito" not in str(name):
                 name_dice = str(name)
             else:
-                name_dice = str(name) if random.random() > 0.3 else str(name).replace("Vito", "Guido")
+                name_dice = str(name) if random.random() > 0.3 else str(
+                    name).replace("Vito", "Guido")
+            if str(message.author) == "Omar97#3049":
+                name_dice = str(name) + ', "' + random.choice(names_om) + '", '
             message_to_save2 = str(name_dice) + " dice: " + message_to_save1
             await self.save_message(message_to_save1, message_to_save2, name,
                                     message.author.voice.channel, False)
@@ -244,7 +254,7 @@ class MyBot(commands.Bot):
     ###########
     def play_messages(self):
         try:
-        # repeat until the message audio folder is empty
+            # repeat until the message audio folder is empty
             while os.listdir(self.message_audio_path) != []:
                 self.play_messages_is_run = True
                 audio_tts = os.listdir(self.message_audio_path)
@@ -252,7 +262,7 @@ class MyBot(commands.Bot):
                 if audio_tts != []:
                     loop = asyncio.new_event_loop()
                     asyncio.set_event_loop(loop)
-    
+
                     loop.run_until_complete(self.callback(audio_tts))
                     loop.close()
                 time.sleep(1)
@@ -281,7 +291,7 @@ class MyBot(commands.Bot):
             audio2notPlay = audio_tts[
                 0] if audio_tts[0] != audio2play else audio_tts[1]
         audio_source = await discord.FFmpegOpusAudio.from_probe(
-            self.message_audio_path + audio2play, options = '-filter:a loudnorm')
+            self.message_audio_path + audio2play, options='-filter:a loudnorm')
         await self.voice_client.move_to(self.channels_audio[audio2play])
         # when the bot switch channel the voice client change
         # so I catch the error and I rerun the command untill it work
@@ -364,6 +374,7 @@ class MyBot(commands.Bot):
         if not self.play_messages_is_run:
             play_messages_thread = threading.Thread(target=self.play_messages)
             play_messages_thread.start()
+
 
 keep_alive()
 try:
