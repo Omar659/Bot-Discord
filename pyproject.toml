@@ -23,6 +23,9 @@ discord = "^1.7.3"
 youtube_dl = "^2021.12.17"
 python-dotenv = "^0.20.0"
 prettytable = "^3.6.0"
+"discord.py" = "^2.3.2"
+pytube = "^15.0.0"
+youtube-search = "^2.1.2"
 
 [tool.poetry.dev-dependencies]
 

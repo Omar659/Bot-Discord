@@ -1,5 +1,6 @@
 { pkgs }: {
   deps = [
+    pkgs.libopus
     pkgs.nodejs-16_x
     pkgs.ffmpeg.bin
     pkgs.sudo
