@@ -52,6 +52,8 @@ sounds = {
         "eren.ogg",
         "Subete no yimiru no taminitsugu... Ore no na wa... Eren Yega"
     ],
+    sound_prefix + "erwin tatakae":
+    ["erwin tatakae.ogg", "L'urlo della battaglia di erwin"],
     sound_prefix + "kira risata":
     ["kira laugh.mp3", "KIRA AHAHAHAHAAHAHAHAHAHAHA"],
     sound_prefix + "patatina":
@@ -125,6 +127,7 @@ class MyBot(commands.Bot):
                 "\tError! You are not connected to the channel available to me."
             )
         except Exception as e:
+            print("exetpion")
             print("\t" + str(e))
 
     #################
@@ -141,7 +144,8 @@ class MyBot(commands.Bot):
         if member.name == "ciao986":
             name = "Vito" if random.random() > 0.3 else "Guido"
         if member.name == "Omar97":
-            name = name + ', anche chiamato "' + random.choice(
+            name = name if random.random(
+            ) > 0.2 else name + ', anche chiamato "' + random.choice(
                 names_om) + '", '
         if before.channel == None:
             welcome_message = random.choice(welcome_messages)
@@ -194,6 +198,7 @@ class MyBot(commands.Bot):
         name = message.author.name if str(
             message.author.nick) == str(None) else message.author.nick
         ctx = await self.get_context(message)
+        # print(name, bots_name)
         await self.join(ctx)
         # if is some message from bot
         if name in bots_name:
@@ -244,7 +249,8 @@ class MyBot(commands.Bot):
                 name_dice = str(name) if random.random() > 0.3 else str(
                     name).replace("Vito", "Guido")
             if str(message.author) == "Omar97#3049":
-                name_dice = str(name) + ', "' + random.choice(names_om) + '", '
+                name_dice = str(name) if random.random() > 0.2 else str(
+                    name) + ', "' + random.choice(names_om) + '", '
             message_to_save2 = str(name_dice) + " dice: " + message_to_save1
             await self.save_message(message_to_save1, message_to_save2, name,
                                     message.author.voice.channel, False)
