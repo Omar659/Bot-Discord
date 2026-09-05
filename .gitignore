@@ -1,1 +1,13 @@
-sound_board/
+sound_board/*
+!sound_board/
+
+openings/*
+!openings/
+
+youtube_musics/*
+!youtube_musics/
+
+message_audio/*
+!message_audio/
+
+config.json

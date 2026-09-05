@@ -1,0 +1,13 @@
+# pip install -r requirements.txt
+# Serve anche ffmpeg installato e raggiungibile nel PATH.
+# discord.py < 2.6 usa modalità di cifratura vocale rimosse da Discord:
+# la voce fallisce in loop con "WebSocket closed with 4006"
+discord.py[voice]>=2.7.1
+PyNaCl>=1.5.0
+# voce principale del text to speech (it-IT-DiegoNeural)
+edge-tts>=7.0.0
+# usato solo come riserva se edge-tts non risponde
+gTTS>=2.5.0
+# yt-dlp va tenuto aggiornato: le versioni vecchie smettono di scaricare da
+# YouTube ("Requested format is not available")
+yt-dlp>=2026.08.19

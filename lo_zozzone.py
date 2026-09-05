@@ -1,14 +1,33 @@
 import discord
 from discord.ext import commands
 import shutil
+import json
 import os
-from os import system
+import sys
 import time
 from gtts import gTTS
-import threading
+import edge_tts
 import asyncio
 import random
+import la_zozzona
 from utils import print_in_chat
+
+# tutti i percorsi sono relativi alla cartella dello script, non alla cwd
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+AUDIO_EXTS = (".mp3", ".ogg", ".wav", ".m4a", ".opus", ".webm")
+# voci italiane disponibili per il text to speech, scegliibili con !voce
+TTS_VOICES = {
+    "diego": ("it-IT-DiegoNeural", "voce maschile"),
+    "giuseppe": ("it-IT-GiuseppeMultilingualNeural",
+                 "voce maschile, legge bene anche le lingue straniere"),
+    "elsa": ("it-IT-ElsaNeural", "voce femminile"),
+    "isabella": ("it-IT-IsabellaNeural", "voce femminile"),
+}
+DEFAULT_VOICE = "diego"
+# la voce scelta va ricordata tra un riavvio e l'altro
+SETTINGS_FILE = os.path.join(BASE_DIR, "settings.json")
+# dopo quanti secondi da solo in vocale il bot si sgancia
+IDLE_TIMEOUT = 120
 
 bots_name = ["Neeko", "Lo Zozzone", "inter·punct", "Lara✨", "Lo Zozzone AUDIO"]
 sound_prefix = "-"
@@ -33,14 +52,14 @@ welcome_messages = [
     "Finalmente è arrivato il tanto desiderato _nome_!",
     "Benvenuto nel server _nome_!",
     "Benvenuto nel nostro server _nome_, faremo grandi cose insieme",
-    "Benvenuto nel server _nome_, entra e lascia un po’ della felicità che porti",
+    "Benvenuto nel server _nome_, entra e lascia un po' della felicità che porti",
     "Un caldo benvenuto a _nome_, nostro raggio di sole che rallegra il nostro server.",
     "Ciao _nome_, sono contento che tu abbia deciso di entrare nel server. Benvenuto!",
     "Si ritorna solo andando via. Sono felice che tu sia di nuovo qui _nome_. Benvenuto nel server.",
     "Che gioia averti tra noi _nome_. Benvenuto!",
     "Un caloroso benvenuto _nome_.",
     "Benvenuto _nome_, regalaci la tua forza vivifica.",
-    "Benvenuto _nome_, l’attendevamo con ansia e afa",
+    "Benvenuto _nome_, l'attendevamo con ansia e afa",
     "_nome_, benvenuto nel server. Entra e mettiti comodo",
     "Benvenuto _nome_, sei il primo a entrare qui. Benvenuto!",
     "Ah, ecco chi è riapparso... _nome_! Forse il destino ha deciso di concederci la tua presenza di nuovo.",
@@ -140,7 +159,11 @@ sounds = {
     sound_prefix + "vito smash": [['vito_smash.mp3'], "vito che smasha"]
 }
 
-bot_welcome_message = '''Benvenuto nell'helper che ti fornisce informazioni sui comandi disponibili per i miei bot. Queste funzionalità sono attive esclusivamente sul canale testuale 'chat-bot'.
+openings = {
+    "ciao986": "vitozzo.ogg"
+}
+
+bot_welcome_message = '''Benvenuto nell\'helper che ti fornisce informazioni sui comandi disponibili per i miei bot. Queste funzionalità sono attive esclusivamente sul canale testuale 'chat-bot'.
 
 
 Lo Zozzone
@@ -155,16 +178,20 @@ Ecco i macro-comandi disponibili:
 
 • self.command_prefixjoin: Invita il bot a entrare nella tua stanza.
 
-• self.command_prefixclear [opzione] [numero]: Permette di eliminare i messaggi all'interno di chat-bot. L'opzione può essere 'bots' per eliminare solo i messaggi dei bot, 'chats' per eliminare solo i messaggi degli utenti, o nessuna opzione per cancellare entrambi. Il numero indica quanti messaggi cancellare. Se non viene specificato, verranno eliminati tutti i messaggi.
+• self.command_prefixvoce [nome]: Cambia la voce del text-to-speech. Senza nome mostra le voci disponibili (diego, giuseppe, elsa, isabella) e quella in uso. La scelta resta anche dopo un riavvio.
+
+• self.command_prefixclear [opzione] [numero]: Permette di eliminare i messaggi all\'interno di chat-bot. L\'opzione può essere \'bots\' per eliminare solo i messaggi dei bot, \'chats\' per eliminare solo i messaggi degli utenti, o nessuna opzione per cancellare entrambi. Il numero indica quanti messaggi cancellare. Se non viene specificato, verranno eliminati tutti i messaggi.
 
 
-La Zozzona (ATTUALMENTE NON FUNZIONANTE, LEGGENDO SUL GITHUB DI PYTUBE C'È UN BUG NOTO DA FIXARE)
+La Zozzona
 Questo bot permette la riproduzione e la gestione audio dei video da youtube.
 
 
 Ecco i macro-comandi disponibili:
 
-• yt_prefixplay [-random] link/titolo: riproduce l'audio di video o di una playlist da youtube tramite il link. È possibile riprodurre l'audio del singolo video anche tramite il titolo della canzone. Se impostato l'opzione -random, gli audio verranno riprodotti in modo casuale.
+• yt_prefixplayer: mostra il player con i pulsanti per indietro, pausa, avanti, riascolta, stop, shuffle e la ricerca di video e playlist.
+
+• yt_prefixplay [-random] [-playlist] link/titolo: riproduce l\'audio di video o di una playlist da youtube tramite il link. È possibile riprodurre l\'audio del singolo video anche tramite il titolo della canzone. Con l\'opzione -playlist il titolo viene cercato tra le playlist invece che tra i video. Se impostato l\'opzione -random, gli audio verranno riprodotti in modo casuale.
 
 • yt_prefixstop: ferma la riproduzione audio.
 
@@ -188,39 +215,96 @@ class MyBot(commands.Bot):
         # voice client where the bot is connected
         self.voice_client = None
         # path of the text to speech files
-        self.message_audio_path = "./message_audio/"
+        self.message_audio_path = os.path.join(BASE_DIR, "message_audio")
+        self.sound_board_path = os.path.join(BASE_DIR, "sound_board")
+        self.openings_path = os.path.join(BASE_DIR, "openings")
         # used for tell who is the sender of a message
         self.last_message_name = ""
-        # used to initialize the thread
+        # used to initialize the player task
         self.play_messages_is_run = False
+        self.player_task = None
 
         self.channels_audio = {}
+        # task che sgancia il bot quando resta solo in vocale
+        self.idle_task = None
+        # voce del text to speech, ripresa da com'era prima del riavvio
+        self.voice_name = self.load_voice()
 
     ############
     # commands #
     ############
+    def humans_in_channel(self):
+        # quante persone (bot esclusi) ci sono nel canale del bot
+        if self.voice_client is None or not self.voice_client.is_connected():
+            return None
+        return len([m for m in self.voice_client.channel.members if not m.bot])
+
+    def check_alone(self):
+        # avvia o annulla il conto alla rovescia per la disconnessione
+        humans = self.humans_in_channel()
+        if humans is None or humans > 0:
+            if self.idle_task is not None:
+                self.idle_task.cancel()
+                self.idle_task = None
+            return
+        if self.idle_task is None or self.idle_task.done():
+            self.idle_task = self.loop.create_task(self.leave_when_alone())
+
+    async def leave_when_alone(self):
+        try:
+            await asyncio.sleep(IDLE_TIMEOUT)
+            if self.humans_in_channel() == 0:
+                print("Canale vuoto: mi disconnetto dalla voce.")
+                await self.voice_client.disconnect()
+                self.voice_client = None
+                self.clean_audio_folder()
+        except asyncio.CancelledError:
+            pass
+        finally:
+            self.idle_task = None
+
+    async def ensure_voice(self, channel):
+        # connette il bot al canale voce richiesto riusando la connessione
+        # esistente (channel.connect() su un client già connesso solleva
+        # ClientException, quindi va usato move_to)
+        if channel is None:
+            return None
+        voice_client = channel.guild.voice_client
+        # una connessione rimasta a metà va chiusa, altrimenti connect()
+        # solleva "Already connected to a voice channel"
+        if voice_client is not None and not voice_client.is_connected():
+            try:
+                await voice_client.disconnect(force=True)
+            except Exception as e:
+                print("\tErrore chiudendo la voce:", e)
+            voice_client = None
+        if voice_client is None:
+            voice_client = await channel.connect()
+        elif voice_client.channel != channel:
+            await voice_client.move_to(channel)
+        self.voice_client = voice_client
+        return voice_client
+
     async def join(self, ctx):
         # join command
         print("!join:")
         try:
             channel = ctx.author.voice.channel
-            self.voice_client = await channel.connect()
+            await self.ensure_voice(channel)
             print("\tJoin command executed with success.")
         except AttributeError:
             print(
                 "\tError! You are not connected to the channel available to me."
             )
         except Exception as e:
-            print("exetpion")
+            print("Exception in join:")
             print("\t" + str(e))
 
     #################
     # system events #
     #################
     async def on_disconnect(self):
-        audio_tts = os.listdir(self.message_audio_path)
-        for audio in audio_tts:
-            os.remove(self.message_audio_path + audio)
+        self.clean_audio_folder()
         print("on_disconnect:")
 
     async def clear_messages(self, ctx, option=None, num=None):
@@ -233,32 +317,37 @@ class MyBot(commands.Bot):
 
         msg_counter = 0
         async for message in ctx.channel.history(limit=None):
-            cond = True
-            while cond:
+            deleted = False
+            while not deleted:
                 try:
-                    cond = False
                     if is_bot_command(message) and option == "bots":
                         await message.delete()
-                        time.sleep(0.25)
+                        await asyncio.sleep(0.25)  # FIX: non blocca l'event loop
                         msg_counter += 1
+                        deleted = True
                     elif not is_bot_command(message) and option == "chats":
                         await message.delete()
-                        time.sleep(0.25)
+                        await asyncio.sleep(0.25)
                         msg_counter += 1
+                        deleted = True
                     elif option is None:
                         await message.delete()
-                        time.sleep(0.25)
+                        await asyncio.sleep(0.25)
                         msg_counter += 1
-                except:
-                    cond = True
+                        deleted = True
+                    else:
+                        deleted = True  # non corrisponde al filtro, skippa
+                except Exception:
+                    await asyncio.sleep(0.25)  # retry in caso di rate limit
             if num is not None:
-                print(msg_counter, num)
-                if msg_counter == num:
+                if msg_counter >= num:
                     break
 
     async def on_voice_state_update(self, member, before, after):
         print("on_voice_state_update:")
-        name = member.name if str(member.nick) == str(None) else member.nick
+        # va controllato anche per i movimenti dei bot, prima di uscire
+        self.check_alone()
+        name = self.display_name_of(member)
         if name in bots_name or name == str(self.user.name):
             return
         if member.name == "ciao986":
@@ -267,17 +356,22 @@ class MyBot(commands.Bot):
             name = name if random.random(
             ) > 0.2 else name + ', anche chiamato "' + random.choice(
                 names_om) + '", '
-        if before.channel == None:
+        if before.channel is None:  # FIX: usare 'is None' invece di '== None'
             welcome_message = random.choice(welcome_messages)
             if member.name == "Light":
                 welcome_message = welcome_message.replace(
                     "_nome_", name + ', anche chiamato "Big Boss", ')
             else:
                 welcome_message = welcome_message.replace("_nome_", name)
+            if member.name == "ciao986":
+                if openings.get("ciao986") is not None:
+                    sound_name = openings["ciao986"]
+                    await self.save_opening_message(
+                        sound_name, member.voice.channel)
             await self.save_message(welcome_message, welcome_message, name,
                                     after.channel, True)
             print("\t" + name + " è entrato")
-        elif after.channel == None:
+        elif after.channel is None:  # FIX: usare 'is None' invece di '== None'
             await self.save_message(name + " ha abbandonato il server",
                                     name + " ha abbandonato il server", name,
                                     before.channel, True)
@@ -309,33 +403,38 @@ class MyBot(commands.Bot):
     async def on_ready(self):
         # when the bot is ready remove old messages
         print("on_ready:")
-        audio_tts = os.listdir(self.message_audio_path)
-        for audio in audio_tts:
-            os.remove(self.message_audio_path + audio)
+        self.clean_audio_folder()
         print('\tWe have logged in as {0.user}'.format(self))
-        channel_pvt = self.get_channel(783465600722665493)
-        channel = self.get_channel(1073741331307954207)
 
-        await print_in_chat(bot_welcome_message.replace(
-            "self.command_prefix", self.command_prefix).replace(
-                "sound_prefix", sound_prefix).replace("yt_prefix", yt_prefix),
-                            channel_pvt,
-                            monospace=True)
-        await print_in_chat(bot_welcome_message.replace(
-            "self.command_prefix", self.command_prefix).replace(
-                "sound_prefix", sound_prefix).replace("yt_prefix", yt_prefix),
-                            channel,
-                            monospace=True)
+        helper = self.build_help_message()
+        for channel_id in (783465600722665493, 1073741331307954207):
+            channel = self.get_channel(channel_id)
+            # il bot potrebbe non avere più accesso al canale
+            if channel is None:
+                print(f"\tCanale {channel_id} non trovato, messaggio saltato.")
+                continue
+            try:
+                await print_in_chat(helper, channel, monospace=True)
+            except Exception as e:
+                print(f"\tImpossibile scrivere nel canale {channel_id}: {e}")
 
     async def on_message(self, message):
-        name = message.author.name if str(
-            message.author.nick) == str(None) else message.author.nick
-        ctx = await self.get_context(message)
-        await self.join(ctx)
-        # if is some message from bot
-        if name in bots_name:
+        # guard su messaggi vuoti per evitare IndexError
+        if not message.content:
             return
-        if (message.author == self.user or message.content[0] in bots_prefix):
+
+        name = self.display_name_of(message.author)
+
+        # skip messaggi di bot PRIMA di fare qualsiasi altra cosa
+        if name in bots_name or message.author == self.user or message.author.bot:
+            return
+
+        ctx = await self.get_context(message)
+
+        if message.content[0] in bots_prefix:
+            # entra nel canale voce dell'autore solo se serve
+            await self.join(ctx)
+
             # Soundboard
             if message.content[0] == sound_prefix:
                 if message.content.lower() == sound_prefix + "sounds":
@@ -351,8 +450,6 @@ class MyBot(commands.Bot):
                     helper = title_offset + title + title_offset + "\n" + helper
                     for command, value in sounds.items():
                         spaces = maxlen - len(command)
-                        # if tabs == 0:
-                        #     tabs = 1
                         helper += "\n" + command + "\t" + " " * spaces + value[
                             1]
                     command = "-random"
@@ -366,13 +463,11 @@ class MyBot(commands.Bot):
                 elif message.content.lower() == sound_prefix + "random":
                     sound_name = random.choice(sounds[random.choice(
                         list(sounds.keys()))][0])
-                    await self.save_sound_board_message(
-                        sound_name, message.author.voice.channel)
-                elif sounds.get(message.content.lower()) != None:
+                    await self.play_sound_command(ctx, sound_name)
+                elif sounds.get(message.content.lower()) is not None:
                     sound_name = random.choice(
                         sounds[message.content.lower()][0])
-                    await self.save_sound_board_message(
-                        sound_name, message.author.voice.channel)
+                    await self.play_sound_command(ctx, sound_name)
                 else:
                     await print_in_chat("Sound not found", ctx)
             # Utils
@@ -406,21 +501,19 @@ class MyBot(commands.Bot):
                             await self.clear_messages(ctx,
                                                       option=info_command[1],
                                                       num=int(info_command[2]))
+                elif message.content.startswith(self.command_prefix + "voce"):
+                    await self.change_voice(ctx, message.content)
                 elif message.content.startswith(self.command_prefix + "help"):
-                    await print_in_chat(bot_welcome_message.replace(
-                        "self.command_prefix", self.command_prefix).replace(
-                            "sound_prefix",
-                            sound_prefix).replace("yt_prefix", yt_prefix),
+                    await print_in_chat(self.build_help_message(),
                                         ctx,
                                         monospace=True)
-            # elif message.content[0] == other_prefix: #TODO
             return
 
         print("on_message:")
-        print("\tcontenuto messaggeio: ", message.content)
+        print("\tcontenuto messaggio: ", message.content)
 
         # if I wrote in chat-bot text channel, save a text to speech file
-        if message.channel.name == "chat-bot":
+        if getattr(message.channel, "name", None) == "chat-bot":
             message_to_save1 = str(message.content)
             name_dice = ""
             if "Vito" not in str(name):
@@ -432,8 +525,11 @@ class MyBot(commands.Bot):
                 name_dice = str(name) if random.random() > 0.2 else str(
                     name) + ', "' + random.choice(names_om) + '", '
             message_to_save2 = str(name_dice) + " dice: " + message_to_save1
-            await self.save_message(message_to_save1, message_to_save2, name,
-                                    message.author.voice.channel, False)
+            # FIX: guard nel caso l'utente non sia in un canale voice
+            if message.author.voice and message.author.voice.channel:
+                await self.save_message(message_to_save1, message_to_save2,
+                                        name, message.author.voice.channel,
+                                        False)
 
     ###########
     # Utility #
@@ -442,91 +538,280 @@ class MyBot(commands.Bot):
         try:
             int(to_check)
             return True
-        except:
+        except (ValueError, TypeError):
             return False
 
-    def play_messages(self):
+    @staticmethod
+    def display_name_of(user):
+        # gli oggetti User (DM) non hanno l'attributo nick
+        nick = getattr(user, "nick", None)
+        return user.name if nick is None else nick
+
+    def build_help_message(self):
+        return bot_welcome_message.replace(
+            "self.command_prefix",
+            self.command_prefix).replace("sound_prefix", sound_prefix).replace(
+                "yt_prefix", yt_prefix)
+
+    def list_audio(self):
+        # solo i file audio completi, in ordine di indice
+        return sorted(f for f in os.listdir(self.message_audio_path)
+                      if f.lower().endswith(AUDIO_EXTS))
+
+    def remove_audio(self, filename):
+        if not filename:
+            return
+        try:
+            os.remove(os.path.join(self.message_audio_path, filename))
+        except OSError:
+            pass
+        self.channels_audio.pop(filename, None)
+
+    def clean_audio_folder(self):
+        for audio in os.listdir(self.message_audio_path):
+            self.remove_audio(audio)
+        self.channels_audio.clear()
+
+    def ensure_player(self):
+        # il player gira come task sull'event loop del bot: usare un loop
+        # separato in un thread rompe il voice client (è legato al loop del bot)
+        if self.player_task is None or self.player_task.done():
+            self.player_task = self.loop.create_task(self.play_messages())
+
+    async def play_messages(self):
+        self.play_messages_is_run = True
         try:
             # repeat until the message audio folder is empty
-            while os.listdir(self.message_audio_path) != []:
-                self.play_messages_is_run = True
-                audio_tts = os.listdir(self.message_audio_path)
-                audio_tts.sort()
-                if audio_tts != []:
-                    loop = asyncio.new_event_loop()
-                    asyncio.set_event_loop(loop)
+            while True:
+                audio_tts = self.list_audio()
+                if not audio_tts:
+                    break
+                try:
+                    await self.callback(audio_tts)
+                except Exception as e:
+                    print("Errore nella riproduzione:", e)
+                    self.clean_audio_folder()
+                    break
+                await asyncio.sleep(0.5)
+        finally:
+            self.play_messages_is_run = False
 
-                    loop.run_until_complete(self.callback(audio_tts))
-                    loop.close()
-                time.sleep(1)
+    def select_audio(self, audio_tts):
+        # per ogni messaggio vengono generati due audio (con e senza il nome
+        # dell'autore): qui si sceglie quale riprodurre e quale scartare
+        parts = os.path.splitext(audio_tts[0])[0].split("_")
+        if len(parts) < 5 or parts[1] in ["bot", "yt"]:
+            return audio_tts[0], None
+
+        # i due file della stessa coppia condividono l'indice iniziale
+        pair = audio_tts[1] if len(audio_tts) > 1 and audio_tts[1].split(
+            "_")[0] == parts[0] else None
+        if pair is None:
+            return audio_tts[0], None
+        if parts[-1] != "False":
+            # messaggi di stato: i due audio sono identici, ne basta uno
+            return audio_tts[0], pair
+
+        if self.last_message_name != parts[1]:
+            self.last_message_name = parts[1]
+            want_name = str(True)
+        else:
+            want_name = str(False)
+        audio2play = audio_tts[0] if parts[2] == want_name else audio_tts[1]
+        audio2notPlay = audio_tts[1] if audio2play == audio_tts[0] else audio_tts[0]
+        return audio2play, audio2notPlay
+
+    async def music_control(self, duck):
+        # i due bot trasmettono insieme nello stesso canale: la musica non si
+        # ferma, si abbassa per il tempo del messaggio. Girano in thread con
+        # event loop diversi, quindi la chiamata va schedulata sull'altro loop.
+        music_bot = la_zozzona.CURRENT_BOT
+        if music_bot is None or music_bot.voice_client is None:
+            return
+        try:
+            coro = (music_bot.duck_for_speech()
+                    if duck else music_bot.unduck_after_speech())
+            future = asyncio.run_coroutine_threadsafe(coro, music_bot.loop)
+            await asyncio.wrap_future(future)
         except Exception as e:
-            print(e)
-            audio_tts = os.listdir(self.message_audio_path)
-            for audio in audio_tts:
-                os.remove(self.message_audio_path + audio)
-        self.play_messages_is_run = False
+            print("\tControllo musica non riuscito:", e)
+
+    async def play_source(self, audio_source):
+        # attende la fine della riproduzione senza bloccare l'event loop
+        finished = asyncio.Event()
+        loop = self.loop
+
+        def after_playing(error):
+            if error:
+                print("\tErrore player:", error)
+            loop.call_soon_threadsafe(finished.set)
+
+        if self.voice_client.is_playing():
+            self.voice_client.stop()
+        start = time.monotonic()
+        self.voice_client.play(audio_source, after=after_playing)
+        await finished.wait()
+        # una durata di pochi decimi indica che ffmpeg è morto subito
+        print("\tRiproduzione finita dopo %.1fs" % (time.monotonic() - start))
 
     async def callback(self, audio_tts):
         # play the text to speech audio
         print("callback:")
-        if audio_tts[0].split("_")[1] in ["bot", "yt"]:
-            audio2play = audio_tts[0]
-        elif audio_tts[0].split("_")[4][:-4] == "False":
-            if self.last_message_name != audio_tts[0].split("_")[1]:
-                self.last_message_name = audio_tts[0].split("_")[1]
-                audio2play = audio_tts[0] if audio_tts[0].split("_")[2] == str(
-                    True) else audio_tts[1]
-            else:
-                audio2play = audio_tts[0] if audio_tts[0].split("_")[2] == str(
-                    False) else audio_tts[1]
-        else:
-            audio2play = audio_tts[0]
-        if audio_tts[0].split("_")[1] not in ["bot", "yt"]:
-            audio2notPlay = audio_tts[
-                0] if audio_tts[0] != audio2play else audio_tts[1]
+        audio2play, audio2notPlay = self.select_audio(audio_tts)
+        path = os.path.join(self.message_audio_path, audio2play)
+
+        # il canale può mancare se il file è rimasto da un'esecuzione precedente
+        channel = self.channels_audio.get(audio2play)
+        if channel is not None:
+            await self.ensure_voice(channel)
+        if self.voice_client is None or not self.voice_client.is_connected():
+            print("\tNessun canale voce disponibile, audio scartato.")
+            self.remove_audio(audio2play)
+            self.remove_audio(audio2notPlay)
+            return
+
+        # stderr esplicito: senza, gli errori di ffmpeg finiscono nel nulla
         audio_source = await discord.FFmpegOpusAudio.from_probe(
-            self.message_audio_path + audio2play, options='-filter:a loudnorm')
-        await self.voice_client.move_to(self.channels_audio[audio2play])
-        # when the bot switch channel the voice client change
-        # so I catch the error and I rerun the command untill it work
-        while True:
-            try:
-                self.voice_client.play(audio_source)
-                break
-            except Exception as e:
-                print("\t", e)
-                time.sleep(1)
-                continue
-        while self.voice_client.is_playing():
-            time.sleep(0.1)
-        # remove audio
-        os.remove(self.message_audio_path + audio2play)
-        if audio_tts[0].split("_")[1] not in ["bot", "yt"]:
-            os.remove(self.message_audio_path + audio2notPlay)
+            path,
+            before_options='-nostdin',
+            options='-filter:a loudnorm',
+            stderr=sys.stderr)
+        # la musica continua a suonare, solo più bassa, per il tempo del messaggio
+        await self.music_control(duck=True)
+        try:
+            await self.play_source(audio_source)
+        finally:
+            await self.music_control(duck=False)
+            self.remove_audio(audio2play)
+            self.remove_audio(audio2notPlay)
 
     def generate_idx_message(self):
-        audio_tts = os.listdir(self.message_audio_path)
-        audio_tts.sort(key=lambda x: int(x.split("_")[0]))
-        if os.listdir(self.message_audio_path) == []:
-            last_audio_number = -1
-        else:
-            last_audio_number = int(audio_tts[-1].split("_")[0])
-        return last_audio_number
+        audio_tts = [
+            f for f in self.list_audio() if self.check_int(f.split("_")[0])
+        ]
+        if not audio_tts:
+            return -1
+        return max(int(f.split("_")[0]) for f in audio_tts)
 
-    def save_audio_message(self,
-                           message,
-                           author_name,
-                           channel,
-                           number,
-                           with_name=False,
-                           member_move=False,
-                           lang="it"):
-        filename = str(number + 1).zfill(5) + "_" + str(
-            author_name) + "_" + str(with_name) + "_" + str(
-                channel) + "_" + str(member_move) + ".mp3"
+    async def save_audio_message(self,
+                                 message,
+                                 author_name,
+                                 channel,
+                                 number,
+                                 with_name=False,
+                                 member_move=False,
+                                 lang="it"):
+        safe_name = self.safe_field(author_name)
+        safe_channel = self.safe_field(channel)
+        filename = str(number + 1).zfill(5) + "_" + safe_name + "_" + str(
+            with_name) + "_" + safe_channel + "_" + str(member_move) + ".mp3"
+        path = os.path.join(self.message_audio_path, filename)
+
+        # senza lettere né cifre non c'è niente da pronunciare: i motori TTS
+        # restituiscono un errore o un file vuoto
+        if not any(c.isalnum() for c in message):
+            print("\tMessaggio senza testo pronunciabile, saltato.")
+            return False
+
+        ok = False
+        try:
+            voice = TTS_VOICES.get(self.voice_name,
+                                   TTS_VOICES[DEFAULT_VOICE])[0]
+            await edge_tts.Communicate(message, voice).save(path)
+            # a volte edge-tts scrive comunque un file da 0 byte, che
+            # manderebbe ffmpeg in errore
+            ok = os.path.isfile(path) and os.path.getsize(path) > 0
+        except Exception as e:
+            print("\tedge-tts non disponibile (%s), uso gTTS" % e)
+
+        if not ok:
+            # gTTS come rete di sicurezza: voce peggiore ma sempre disponibile
+            try:
+                await asyncio.to_thread(self.save_with_gtts, message, path,
+                                        lang)
+                ok = os.path.isfile(path) and os.path.getsize(path) > 0
+            except Exception as e:
+                print("\tAnche gTTS ha fallito:", e)
+
+        if not ok:
+            # meglio nessun file che un file rotto in coda
+            try:
+                os.remove(path)
+            except OSError:
+                pass
+            return False
         self.channels_audio[filename] = channel
-        tts = gTTS(message, lang=lang)
-        tts.save(self.message_audio_path + filename)
+        return True
+
+    @staticmethod
+    def safe_field(value):
+        # "_" separa i campi nel nome file, mentre \\ / : * ? " < > | non sono
+        # ammessi da Windows: i soprannomi tipo 'omar97, anche chiamato "Il
+        # principe oscuro",' facevano fallire il salvataggio dell'audio
+        cleaned = str(value)
+        for char in '\\/:*?"<>|_\n\r\t':
+            cleaned = cleaned.replace(char, "-")
+        return cleaned.strip()[:60] or "utente"
+
+    @staticmethod
+    def save_with_gtts(message, path, lang):
+        gTTS(message, lang=lang).save(path)
+
+    #########
+    # voci  #
+    #########
+    @staticmethod
+    def load_voice():
+        # se il file manca o è illeggibile si riparte dalla voce predefinita
+        try:
+            with open(SETTINGS_FILE, "r", encoding="utf-8") as settings_file:
+                voice = json.load(settings_file).get("tts_voice")
+            if voice in TTS_VOICES:
+                return voice
+        except Exception:
+            pass
+        return DEFAULT_VOICE
+
+    def save_voice(self):
+        try:
+            with open(SETTINGS_FILE, "w", encoding="utf-8") as settings_file:
+                json.dump({"tts_voice": self.voice_name},
+                          settings_file,
+                          indent=2)
+        except Exception as e:
+            print("\tImpossibile salvare la voce scelta:", e)
+
+    def voices_list(self):
+        righe = []
+        for name, (_, descrizione) in TTS_VOICES.items():
+            attuale = " <- in uso" if name == self.voice_name else ""
+            righe.append("  " + name.ljust(9) + descrizione + attuale)
+        return "\n".join(righe)
+
+    async def change_voice(self, ctx, content):
+        parts = content.split(" ", 1)
+        scelta = parts[1].strip().lower() if len(parts) > 1 else ""
+        if not scelta:
+            await print_in_chat("Voci disponibili:\n" + self.voices_list() +
+                                "\n\nPer cambiarla: " + self.command_prefix +
+                                "voce <nome>",
+                                ctx,
+                                monospace=True,
+                                split_character=False)
+            return
+        if scelta not in TTS_VOICES:
+            await print_in_chat("Voce \"" + scelta +
+                                "\" non trovata. Voci disponibili:\n" +
+                                self.voices_list(),
+                                ctx,
+                                monospace=True,
+                                split_character=False)
+            return
+        self.voice_name = scelta
+        self.save_voice()
+        print("Voce cambiata in " + scelta + " (" + TTS_VOICES[scelta][0] + ")")
+        await print_in_chat("Ok, da adesso parlo con la voce di " +
+                            scelta.capitalize(), ctx)
 
     async def save_message(self,
                            message1,
@@ -535,48 +820,52 @@ class MyBot(commands.Bot):
                            channel,
                            member_move,
                            lang="it"):
-        if self.voice_client is None:
-            self.voice_client = await channel.connect()
+        await self.ensure_voice(channel)
         last_audio_number = self.generate_idx_message()
-        self.save_audio_message(message1,
-                                name,
-                                channel,
-                                last_audio_number,
-                                False,
-                                member_move,
-                                lang=lang)
-        self.save_audio_message(message2,
-                                name,
-                                channel,
-                                last_audio_number,
-                                True,
-                                member_move,
-                                lang=lang)
-        if not self.play_messages_is_run:
-            play_messages_thread = threading.Thread(target=self.play_messages)
-            play_messages_thread.start()
+        await self.save_audio_message(message1, name, channel,
+                                      last_audio_number, False, member_move,
+                                      lang)
+        await self.save_audio_message(message2, name, channel,
+                                      last_audio_number, True, member_move,
+                                      lang)
+        self.ensure_player()
+
+    async def copy_audio_to_queue(self, src_file, sound_name, channel):
+        await self.ensure_voice(channel)
+        last_audio_number = self.generate_idx_message() + 1
+        new_file_name = str(last_audio_number).zfill(5) + "_bot_" + sound_name
+        dst_file = os.path.join(self.message_audio_path, new_file_name)
+        shutil.copy(src_file, dst_file)
+        self.channels_audio[new_file_name] = channel
+        self.ensure_player()
+
+    async def play_sound_command(self, ctx, sound_name):
+        # il comando ha senso solo se chi scrive è in un canale voce
+        if ctx.author.voice is None or ctx.author.voice.channel is None:
+            await print_in_chat("Devi essere in un canale vocale", ctx)
+            return
+        await self.save_sound_board_message(sound_name,
+                                            ctx.author.voice.channel)
 
     async def save_sound_board_message(self, sound_name, channel):
-        if self.voice_client is None:
-            self.voice_client = await channel.connect()
-        last_audio_number = self.generate_idx_message() + 1
-        src_file = "./sound_board/" + sound_name
-        dst_folder = "./message_audio/"
-        new_file_name = str(last_audio_number).zfill(5) + "_bot_" + sound_name
-        self.channels_audio[new_file_name] = channel
-        dst_file = os.path.join(dst_folder, new_file_name)
-        shutil.copy(src_file, dst_file)
-        if not self.play_messages_is_run:
-            play_messages_thread = threading.Thread(target=self.play_messages)
-            play_messages_thread.start()
+        await self.copy_audio_to_queue(
+            os.path.join(self.sound_board_path, sound_name), sound_name,
+            channel)
+
+    async def save_opening_message(self, sound_name, channel):
+        await self.copy_audio_to_queue(
+            os.path.join(self.openings_path, sound_name), sound_name, channel)
 
 
-def main():
+def main(token):
+    bot = MyBot(command_prefix=utils_prefix_lo_zozzone, self_bot=False)
     try:
-        bot = MyBot(command_prefix=utils_prefix_lo_zozzone, self_bot=False)
-        bot.run(os.getenv('TOKEN_ZOZZONE'))
+        # log_handler=None: il logging è configurato una sola volta in main.py,
+        # altrimenti ogni bot aggiunge un handler e i log escono duplicati
+        bot.run(token, log_handler=None)
     except discord.errors.HTTPException as e:
         if str(e.status) == "429":
             print("\n\n\nBLOCKED BY RATE LIMITS\nRESTARTING NOW\n\n\n")
-            system("python restarter.py")
-            system('kill 1')
+            os.system("python restarter.py")
+    except Exception as e:
+        print("Lo Zozzone si è fermato:", e)

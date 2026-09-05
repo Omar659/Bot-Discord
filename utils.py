@@ -1,3 +1,44 @@
+import os
+import subprocess
+import weakref
+
+# Su Windows ffmpeg, ffprobe e yt-dlp girano in processi console: avviati da
+# pythonw (che una console non ce l'ha) ne fanno lampeggiare una per un frame
+# a ogni audio riprodotto. CREATE_NO_WINDOW evita che venga creata.
+CREATE_NO_WINDOW = 0x08000000
+
+# processi figli avviati dal bot (ffmpeg, ffprobe, yt-dlp): vanno terminati
+# alla chiusura, altrimenti restano orfani a suonare e a tenere i file aperti
+CHILD_PROCESSES = weakref.WeakSet()
+
+
+def hide_subprocess_windows():
+    original_init = subprocess.Popen.__init__
+    # la patch va applicata una volta sola
+    if getattr(original_init, "patched_by_bot", False):
+        return
+
+    def patched_init(self, *args, **kwargs):
+        if os.name == "nt":
+            kwargs["creationflags"] = kwargs.get("creationflags",
+                                                 0) | CREATE_NO_WINDOW
+        original_init(self, *args, **kwargs)
+        CHILD_PROCESSES.add(self)
+
+    patched_init.patched_by_bot = True
+    subprocess.Popen.__init__ = patched_init
+
+
+def kill_child_processes():
+    # senza questo ffmpeg sopravvive alla chiusura della finestra
+    for process in list(CHILD_PROCESSES):
+        try:
+            if process.poll() is None:
+                process.kill()
+        except Exception:
+            pass
+
+
 # Function: print_in_chat
 # Description:
 # This asynchronous function sends a given text to a specified chat channel. It can format the text in monospace,
@@ -8,7 +49,8 @@
 # - channel (object): The chat channel object where the text will be sent.
 # - monospace (bool, optional): If True, the text will be formatted in monospace using triple backticks. Default is False.
 # - tts (bool, optional): If True, the message will be sent with text-to-speech enabled. Default is False.
-# - split_character (bool, optional): If True, the text will be split based on spaces, newlines, or tabs if it exceeds the character limit. If False, the text will be split by newlines only. Default is True.
+# - split_character (bool, optional): If True, the text will be split at spaces/newlines/tabs if it exceeds the limit.
+#                                     If False, the text will be split by newlines only. Default is True.
 async def print_in_chat(text,
                         channel,
                         monospace=False,
@@ -18,59 +60,47 @@ async def print_in_chat(text,
     max_char = 1900
 
     # Determine the monospace formatting characters based on the monospace flag
-    monospace_superscripts = "```" if monospace else ""
+    mono = "```" if monospace else ""
 
     if split_character:
-        # If the text length is less than the max character limit, send the entire text
-        if len(text) < max_char:
-            to_send = monospace_superscripts + text + monospace_superscripts
-            await channel.send(to_send, tts=tts)
+        # If the text fits in one message, send it directly
+        if len(text) <= max_char:
+            await channel.send(mono + text + mono, tts=tts)
             return
 
-        # Initialize an empty buffer to hold partial text chunks
-        buffer = ""
+        # Split the long text into chunks, breaking at whitespace boundaries
+        chunks = []
+        start = 0
+        while start < len(text):
+            end = start + max_char
+            if end >= len(text):
+                # Last chunk: take everything remaining
+                chunks.append(text[start:])
+                break
+            # Try to break at a whitespace character to avoid cutting words
+            split_pos = end
+            for j in range(end, start, -1):
+                if text[j] in (" ", "\n", "\t"):
+                    split_pos = j
+                    break
+            chunks.append(text[start:split_pos])
+            # Skip the whitespace character we split on
+            start = split_pos + 1
 
-        # Loop through the text in chunks of max_char
-        for i in range(max_char, len(text), max_char):
-            # If the character at the current max_char position is a space, newline, or tab, split there
-            if text[i] in [" ", "\n", "\t"]:
-                # Prepare the message to send
-                to_send = monospace_superscripts + buffer + " " + text[
-                    i - max_char:i] + monospace_superscripts
-                await channel.send(to_send, tts=tts)
-            else:
-                # If not, find the nearest space, newline, or tab before the max_char limit to split
-                for j in range(i, -1, -1):
-                    if text[j] in [" ", "\n", "\t"]:
-                        # Prepare the message to send
-                        to_send = monospace_superscripts + buffer + text[
-                            i - max_char:j] + monospace_superscripts
-                        await channel.send(to_send, tts=tts)
-                        # Update the buffer with the remaining text after the split
-                        buffer = text[j + 1:i]
-                        break
-
-        # If the end of the text has not been reached, send the remaining part
-        if i != len(text) - 1:
-            to_send = monospace_superscripts + buffer + text[
-                i:] + monospace_superscripts
-            await channel.send(to_send, tts=tts)
+        for chunk in chunks:
+            if chunk:  # skip empty chunks
+                await channel.send(mono + chunk + mono, tts=tts)
     else:
-        # Initialize an empty string to hold the current message
+        # Split by newlines, accumulating rows until the chunk is full
         to_send = ""
-
-        # Split the text by newline characters and process each row
         for row in text.split("\n"):
-            # If the current message length plus the new row is within the limit, append the row
             if len(to_send) + len(row) + 1 < max_char:
                 to_send += row + "\n"
             else:
-                # If the limit is reached, send the current message and start a new one
-                to_send = monospace_superscripts + to_send + monospace_superscripts
-                await channel.send(to_send, tts=tts)
-                # Start a new message with the current row
+                if to_send:
+                    await channel.send(mono + to_send + mono, tts=tts)
                 to_send = row + "\n"
 
-        # Send the final part of the text
-        to_send = monospace_superscripts + to_send + monospace_superscripts
-        await channel.send(to_send, tts=tts)
+        # Send the final remaining part
+        if to_send:
+            await channel.send(mono + to_send + mono, tts=tts)
