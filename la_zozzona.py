@@ -29,6 +29,9 @@ CURRENT_BOT = None
 DUCK_VOLUME = 0.25
 # dopo quanti secondi da solo in vocale il bot si sgancia
 IDLE_TIMEOUT = 120
+# porta tutti i brani allo stesso volume di riferimento: richiede il percorso
+# PCM, quindi con DUCK_VOLUME a 1.0 e questo a False si torna alla copia diretta
+NORMALIZE_VOLUME = True
 
 bots_name = ["Neeko", "Lo Zozzone", "inter·punct", "Lara✨", "Lo Zozzone AUDIO"]
 sound_prefix = "-"
@@ -45,7 +48,7 @@ youtube_help_message = '''Comandi per la riproduzione audio da YouTube.
 
 • yt_prefixplayer: mostra il player con i pulsanti per indietro, pausa, avanti, riascolta, stop, shuffle e la ricerca di video e playlist.
 
-• yt_prefixplay [-random] [-playlist] link/titolo: riproduce l'audio di un video o di una playlist di youtube tramite il link. È possibile riprodurre l'audio del singolo video anche tramite il titolo della canzone. Con l'opzione -playlist il titolo viene cercato tra le playlist invece che tra i video. Se impostata l'opzione -random, gli audio verranno riprodotti in modo casuale.
+• yt_prefixplay [-random] [-playlist] [-durata minuti] link/titolo: riproduce l'audio di un video o di una playlist di youtube tramite il link. È possibile riprodurre l'audio del singolo video anche tramite il titolo della canzone. Con l'opzione -playlist il titolo viene cercato tra le playlist invece che tra i video. Se impostata l'opzione -random, gli audio verranno riprodotti in modo casuale. Con -durata si indicano i minuti complessivi voluti: della playlist vengono presi i primi video fino ad avvicinarsi il più possibile a quel totale. Senza, viene scaricata tutta.
 
 • yt_prefixstop: ferma la riproduzione audio e svuota la coda.
 
@@ -58,7 +61,12 @@ youtube_help_message = '''Comandi per la riproduzione audio da YouTube.
 
 
 class SearchModal(discord.ui.Modal):
-    # finestra di ricerca: una per i video, una per le playlist
+    """Finestra di ricerca: una per i video, una per le playlist.
+
+    L'ordine casuale compare solo per le playlist: su un singolo video non
+    c'è niente da mescolare.
+    """
+
     def __init__(self, bot, search_playlist):
         super().__init__(title="Cerca una playlist"
                          if search_playlist else "Cerca un video")
@@ -68,14 +76,44 @@ class SearchModal(discord.ui.Modal):
         self.query = discord.ui.TextInput(
             placeholder="lofi hip hop     oppure     https://youtu.be/...",
             max_length=300)
-        self.random_queue = discord.ui.TextInput(default="no",
-                                                 required=False,
-                                                 max_length=3)
         self.add_item(
             discord.ui.Label(text="Titolo o link", component=self.query))
-        self.add_item(
-            discord.ui.Label(text="Ordine casuale (si/no)",
-                             component=self.random_queue))
+
+        self.ordine = None
+        if search_playlist:
+            self.ordine = discord.ui.Select(options=[
+                discord.SelectOption(label="Ordine della playlist",
+                                     value="no",
+                                     description="come su YouTube",
+                                     default=True),
+                discord.SelectOption(label="Ordine casuale",
+                                     value="si",
+                                     description="mescola i brani"),
+            ])
+            self.add_item(
+                discord.ui.Label(text="Riproduzione", component=self.ordine))
+
+        # il bersaglio di durata ha senso solo su una playlist: per un
+        # singolo video non c'è niente da selezionare
+        self.max_minuti = None
+        if search_playlist:
+            self.max_minuti = discord.ui.TextInput(
+                placeholder="es. 180 per circa 3 ore  ::  vuoto = tutta",
+                required=False,
+                max_length=4)
+            self.add_item(
+                discord.ui.Label(text="Durata totale desiderata (minuti)",
+                                 component=self.max_minuti))
+
+    def valori(self):
+        casuale = bool(self.ordine and self.ordine.values
+                       and self.ordine.values[0] == "si")
+        limite = None
+        if self.max_minuti is not None:
+            testo = (self.max_minuti.value or "").strip()
+            if testo.isdigit() and int(testo) > 0:
+                limite = int(testo)
+        return casuale, limite
 
     async def on_submit(self, interaction):
         channel = interaction.user.voice.channel if interaction.user.voice else None
@@ -85,17 +123,15 @@ class SearchModal(discord.ui.Modal):
             return
         # il download può durare parecchio: la risposta va rimandata
         await interaction.response.defer()
-        random_queue = self.random_queue.value.strip().lower() in ("si", "sì",
-                                                                  "yes", "y",
-                                                                  "1")
-        self.bot.stop_yt["flag_yt"] = False
+        casuale, limite = self.valori()
         try:
             await self.bot.save_youtube_music(self.query.value, channel,
-                                              random_queue,
-                                              self.search_playlist)
+                                              casuale, self.search_playlist,
+                                              limite)
         except Exception as e:
             print("Ricerca dal player fallita:", e)
-            await interaction.followup.send("Non ho trovato niente",
+            await interaction.followup.send("Non riesco a metterla in coda: " +
+                                            str(e),
                                             ephemeral=True)
         await self.bot.refresh_player()
 
@@ -184,10 +220,21 @@ class MyBotAUDIO(commands.Bot):
         self.play_messages_is_run = False
         self.player_task = None
 
+        # flag_yt annulla il download in corso; stop_requested ferma il
+        # player: tenerli distinti evita che si riattivino a vicenda
         self.stop_yt = {"flag_yt": False}
+        self.stop_requested = False
         self.channels_audio = {}
+        # avanzamento del download e guadagno per brano, riempiti dal
+        # downloader mentre lavora nel suo thread
+        self.download_status = {"active": False, "done": 0, "total": 0}
+        self.loudness = {}
         self.youtube_downloader = YouTubeDownloader(self.message_audio_path,
-                                                    self.generate_idx_message)
+                                                    self.generate_idx_message,
+                                                    self.download_status,
+                                                    self.loudness)
+        # guadagno del brano in riproduzione, applicato al volume
+        self.track_gain = 1.0
         # messaggio con l'embed del player, tenuto aggiornato a ogni cambio
         self.player_message = None
         self.player_view_added = False
@@ -346,12 +393,23 @@ class MyBotAUDIO(commands.Bot):
                     # le opzioni possono essere in qualunque ordine
                     random_queue = False
                     search_playlist = False
+                    max_minuti = None
                     while args.startswith("-"):
                         flag, _, rest = args.partition(" ")
                         if flag.lower() == "-random":
                             random_queue = True
                         elif flag.lower() == "-playlist":
                             search_playlist = True
+                        elif flag.lower() in ("-durata", "-max"):
+                            # il valore è il pezzo subito dopo l'opzione
+                            valore, _, rest = rest.strip().partition(" ")
+                            if not valore.isdigit() or int(valore) <= 0:
+                                await print_in_chat(
+                                    "Dopo " + flag + " servono i minuti "
+                                    "complessivi, per esempio: " + yt_prefix +
+                                    "play -playlist -durata 180 lofi", ctx)
+                                return
+                            max_minuti = int(valore)
                         else:
                             break
                         args = rest.strip()
@@ -363,10 +421,12 @@ class MyBotAUDIO(commands.Bot):
                         await self.save_youtube_music(args,
                                                       ctx.author.voice.channel,
                                                       random_queue,
-                                                      search_playlist)
+                                                      search_playlist,
+                                                      max_minuti)
                     except Exception as e:
                         print(e)
-                        await print_in_chat("Youtube video not found", ctx)
+                        await print_in_chat("Non riesco a metterla in coda: " +
+                                            str(e), ctx)
                     # al primo play il pannello compare da solo
                     if self.player_message is None:
                         await self.send_player(message.channel)
@@ -427,6 +487,10 @@ class MyBotAUDIO(commands.Bot):
         except OSError:
             pass
         self.channels_audio.pop(filename, None)
+
+    def clear_queue(self):
+        for yt_file in self.list_yt_music():
+            self.remove_audio(yt_file)
 
     def clean_audio_folder(self):
         for audio in os.listdir(self.message_audio_path):
@@ -558,12 +622,12 @@ class MyBotAUDIO(commands.Bot):
             self.voice_client.pause()
             self.track_paused_at = time.monotonic()
 
-    def set_music_volume(self, volume):
-        # funziona solo sulle sorgenti con volume regolabile: se la musica
-        # è riprodotta in copia diretta non c'è niente da regolare
+    def set_music_volume(self, level):
+        # il livello richiesto viene moltiplicato per il guadagno del brano,
+        # così la normalizzazione resta valida anche mentre la musica è bassa
         if self.current_source is not None and hasattr(self.current_source,
                                                        "volume"):
-            self.current_source.volume = volume
+            self.current_source.volume = self.track_gain * level
             return True
         return False
 
@@ -576,6 +640,12 @@ class MyBotAUDIO(commands.Bot):
     async def unduck_after_speech(self):
         self.ducked = False
         self.set_music_volume(1.0)
+
+    def gain_for(self, filename):
+        # misurato al download; 1.0 se la misura non è riuscita
+        if not NORMALIZE_VOLUME:
+            return 1.0
+        return self.loudness.get(self.music_title(filename), 1.0)
 
     @staticmethod
     def probe_duration(path):
@@ -624,7 +694,8 @@ class MyBotAUDIO(commands.Bot):
         # ridisegna la barra finché c'è qualcosa in riproduzione
         while self.play_messages_is_run:
             await asyncio.sleep(PROGRESS_REFRESH)
-            if self.player_message is not None and self.is_busy():
+            if self.player_message is not None and (
+                    self.is_busy() or self.download_status.get("active")):
                 await self.refresh_player()
 
     def is_busy(self):
@@ -634,6 +705,8 @@ class MyBotAUDIO(commands.Bot):
     async def skip_current(self):
         # fermare la sorgente fa scattare la callback di fine brano: il file
         # viene archiviato e il player passa al successivo
+        # "avanti" ha la precedenza su un riascolta rimasto in sospeso
+        self.replay_flag = False
         if self.is_busy():
             self.voice_client.stop()
 
@@ -657,9 +730,13 @@ class MyBotAUDIO(commands.Bot):
             self.ensure_player()
 
     async def stop_playback(self):
+        self.stop_requested = True
         self.stop_yt["flag_yt"] = True
         if self.voice_client is not None:
             self.voice_client.stop()
+        # la coda va svuotata subito: aspettare la fine del brano lasciava al
+        # player il tempo di avviare i file appena scaricati
+        self.clear_queue()
 
     def build_player_embed(self):
         queue = self.list_yt_music()
@@ -697,6 +774,19 @@ class MyBotAUDIO(commands.Bot):
             embed.add_field(name="In coda (" + str(len(queue) - 1) + ")",
                             value="\n".join(righe),
                             inline=False)
+        if self.download_status.get("active"):
+            done = self.download_status.get("done", 0)
+            total = self.download_status.get("total", 0)
+            if total:
+                fatti = min(done + 1, total)
+                testo = "scarico %d di %d  (%d già in coda)" % (fatti, total,
+                                                                done)
+            else:
+                testo = "sto leggendo la playlist…"
+            embed.add_field(name="⬇ Download in corso",
+                            value=testo,
+                            inline=False)
+
         history = self.history_files()
         if history:
             embed.add_field(name="Precedente",
@@ -742,11 +832,16 @@ class MyBotAUDIO(commands.Bot):
         try:
             # repeat until the message audio folder is empty
             while True:
+                # controllo in testa: senza, i brani scaricati dopo lo stop
+                # venivano avviati e subito interrotti, in loop
+                if self.stop_requested:
+                    self.clear_queue()
+                    break
                 audio_tts = self.list_yt_music()
                 if not audio_tts:
                     # con le playlist la coda si svuota tra un download e
                     # l'altro: uscire qui ucciderebbe il player a metà coda
-                    if self.is_downloading() and not self.stop_yt["flag_yt"]:
+                    if self.is_downloading():
                         await asyncio.sleep(0.5)
                         continue
                     break
@@ -760,10 +855,9 @@ class MyBotAUDIO(commands.Bot):
                 await asyncio.sleep(0.5)
         finally:
             self.play_messages_is_run = False
-            # lo stop è un segnale una tantum: va riarmato, altrimenti il
-            # tasto salta successivo svuoterebbe di nuovo tutta la coda
-            if not self.is_downloading():
-                self.stop_yt["flag_yt"] = False
+            # lo stop del player è un segnale una tantum, così i tasti
+            # indietro e riascolta tornano subito utilizzabili
+            self.stop_requested = False
             await self.refresh_player()
 
     async def play_source(self, audio_source):
@@ -790,7 +884,7 @@ class MyBotAUDIO(commands.Bot):
             try:
                 await asyncio.wait_for(finished.wait(), timeout=0.2)
             except asyncio.TimeoutError:
-                if self.stop_yt["flag_yt"]:
+                if self.stop_requested:
                     self.voice_client.stop()
         # una durata di pochi decimi indica che ffmpeg è morto subito
         print("\tRiproduzione finita dopo %.1fs" % (time.monotonic() - start))
@@ -810,6 +904,10 @@ class MyBotAUDIO(commands.Bot):
             self.remove_audio(audio2play)
             return
 
+        # ogni brano parte pulito: un riascolta chiesto per il brano
+        # precedente e mai consumato non deve ripercuotersi su questo
+        self.replay_flag = False
+
         codec, bitrate = await discord.FFmpegOpusAudio.probe(path)
         self.track_duration = await asyncio.to_thread(self.probe_duration, path)
         print("\t%s | codec %s | durata %s | canale %s" %
@@ -817,8 +915,9 @@ class MyBotAUDIO(commands.Bot):
                self.format_time(self.track_duration)
                if self.track_duration else "?", channel))
         # stderr esplicito: senza, gli errori di ffmpeg finiscono nel nulla
-        if DUCK_VOLUME >= 1.0:
-            # nessun ducking richiesto: il file opus viene copiato così com'è,
+        self.track_gain = self.gain_for(audio2play)
+        if DUCK_VOLUME >= 1.0 and not NORMALIZE_VOLUME:
+            # niente da regolare: il file opus viene copiato così com'è,
             # senza ricodifica (è quello che evita gli scatti)
             audio_source = discord.FFmpegOpusAudio(path,
                                                    codec=codec,
@@ -827,12 +926,14 @@ class MyBotAUDIO(commands.Bot):
                                                    stderr=sys.stderr)
         else:
             # per regolare il volume al volo serve il PCM: si paga una
-            # ricodifica, ma la musica può abbassarsi mentre l'altro parla
+            # ricodifica, ma si può pareggiare il volume tra i brani e
+            # abbassarlo mentre l'altro bot parla
+            livello = DUCK_VOLUME if self.ducked else 1.0
             audio_source = discord.PCMVolumeTransformer(
                 discord.FFmpegPCMAudio(path,
                                        before_options='-nostdin',
                                        stderr=sys.stderr),
-                volume=DUCK_VOLUME if self.ducked else 1.0)
+                volume=self.track_gain * livello)
         try:
             await self.play_source(audio_source)
         finally:
@@ -840,10 +941,9 @@ class MyBotAUDIO(commands.Bot):
             self.track_started = None
             self.track_duration = None
             self.current_source = None
-            if self.stop_yt["flag_yt"]:
+            if self.stop_requested:
                 # stop: si svuota tutta la coda
-                for yt_file in self.list_yt_music():
-                    self.remove_audio(yt_file)
+                self.clear_queue()
             elif self.replay_flag:
                 # riascolta / indietro: il brano resta in coda dov'è
                 self.replay_flag = False
@@ -862,8 +962,15 @@ class MyBotAUDIO(commands.Bot):
                                  input,
                                  channel,
                                  random_queue,
-                                 search_playlist=False):
+                                 search_playlist=False,
+                                 minuti_totali=None):
         try:
+            # un nuovo brano annulla uno stop precedente
+            self.stop_requested = False
+            self.stop_yt["flag_yt"] = False
+            # durata complessiva desiderata; None = si scarica tutta
+            self.youtube_downloader.target_total = (minuti_totali * 60
+                                                    if minuti_totali else None)
             await self.ensure_voice(channel)
 
             query = input.strip()
@@ -886,14 +993,16 @@ class MyBotAUDIO(commands.Bot):
                 daemon=True)
             yt_down_thread.start()
             self.download_thread = yt_down_thread
+            # il player si avvia subito: sa già aspettare mentre il download
+            # è in corso, quindi non dipende dall'arrivo del primo file
+            self.ensure_player()
 
-            # attende il primo file scaricato, ma senza restare bloccata
-            # per sempre se il download fallisce
+            # si resta in attesa solo per poter riferire l'errore in chat
             while not self.list_yt_music() and yt_down_thread.is_alive():
                 await asyncio.sleep(0.2)
             if not self.list_yt_music():
-                raise ValueError("Download fallito")
-            self.ensure_player()
+                raise ValueError(self.youtube_downloader.last_error
+                                 or "download fallito")
         except Exception as e:
             print(
                 "##########################\nERRORE\n##########################"

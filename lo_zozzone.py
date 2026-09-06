@@ -191,7 +191,7 @@ Ecco i macro-comandi disponibili:
 
 • yt_prefixplayer: mostra il player con i pulsanti per indietro, pausa, avanti, riascolta, stop, shuffle e la ricerca di video e playlist.
 
-• yt_prefixplay [-random] [-playlist] link/titolo: riproduce l\'audio di video o di una playlist da youtube tramite il link. È possibile riprodurre l\'audio del singolo video anche tramite il titolo della canzone. Con l\'opzione -playlist il titolo viene cercato tra le playlist invece che tra i video. Se impostato l\'opzione -random, gli audio verranno riprodotti in modo casuale.
+• yt_prefixplay [-random] [-playlist] [-durata minuti] link/titolo: riproduce l\'audio di video o di una playlist da youtube tramite il link. È possibile riprodurre l\'audio del singolo video anche tramite il titolo della canzone. Con l\'opzione -playlist il titolo viene cercato tra le playlist invece che tra i video. Se impostato l\'opzione -random, gli audio verranno riprodotti in modo casuale.
 
 • yt_prefixstop: ferma la riproduzione audio.
 

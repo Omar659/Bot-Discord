@@ -1,9 +1,9 @@
-import tkinter as tk
-from tkinter import scrolledtext
 import discord
 from lo_zozzone import main as main_zozzone
 from la_zozzona import main as main_zozzona
 from utils import hide_subprocess_windows, kill_child_processes
+import ui_theme
+from console_ui import ConsoleWindow
 import json
 import queue
 import sys
@@ -22,13 +22,6 @@ def start_bot(main_func, config):
     except Exception as e:
         print("Bot terminato con errore:", e)
 
-
-# quante righe tenere nella console: un ScrolledText che cresce all'infinito
-# rallenta Tkinter fino a bloccare la finestra dopo qualche ora di log
-MAX_CONSOLE_LINES = 2000
-# quanti messaggi scrivere per ogni giro: se ne arriva una valanga (un
-# traceback ripetuto) svuotare tutta la coda in un colpo congela la GUI
-MAX_MESSAGES_PER_TICK = 200
 
 closing = False
 
@@ -85,84 +78,6 @@ class ConsoleRedirector:
                 pass
 
 
-# GUI per il controllo del bot
-def launch_gui(output_queue):
-    root = tk.Tk()
-    root.title("Bot Controller")
-
-    # Imposta l'icona della finestra
-    try:
-        root.iconbitmap(os.path.join(BASE_DIR, "icon.ico"))
-    except Exception as e:
-        print("Impossibile caricare l'icona:", e)
-
-    # Imposta la finestra per occupare l'80% dello schermo
-    screen_width = root.winfo_screenwidth()
-    screen_height = root.winfo_screenheight()
-    window_width = int(screen_width * 0.8)
-    window_height = int(screen_height * 0.8)
-    root.geometry(f"{window_width}x{window_height}")
-
-    # Aggiungi padding per la GUI
-    padding = 20
-
-    # Titolo
-    title_label = tk.Label(root, text="I ZOZZONI", font=("Arial", 16, "bold"))
-    title_label.pack(pady=padding)
-
-    # Pulsante per fermare i bot
-    stop_button = tk.Button(root,
-                            text="STOP",
-                            command=lambda: stop_all_bots(root),
-                            bg="red",
-                            fg="white",
-                            font=("Arial", 12))
-    stop_button.pack(pady=padding)
-
-    # Frame che contiene l'area di output (console)
-    output_frame = tk.Frame(root)
-    output_frame.pack(fill=tk.BOTH, expand=True, padx=padding, pady=padding)
-
-    # Aggiungi un box scorribile per visualizzare l'output
-    output_box = scrolledtext.ScrolledText(output_frame, wrap=tk.WORD)
-    output_box.pack(fill=tk.BOTH, expand=True)
-
-    # Svuota periodicamente la coda dei messaggi nella Text box
-    def drain_queue():
-        if closing:
-            return
-        try:
-            pieces = []
-            for _ in range(MAX_MESSAGES_PER_TICK):
-                try:
-                    pieces.append(output_queue.get_nowait())
-                except queue.Empty:
-                    break
-            if pieces:
-                # un solo insert invece di uno per messaggio
-                output_box.insert(tk.END, "".join(pieces))
-                # la console non deve crescere all'infinito
-                righe = int(output_box.index("end-1c").split(".")[0])
-                if righe > MAX_CONSOLE_LINES:
-                    output_box.delete("1.0",
-                                      "%d.0" % (righe - MAX_CONSOLE_LINES))
-                output_box.yview(tk.END)
-        except Exception:
-            # un errore qui finirebbe su stderr, cioè di nuovo in questa
-            # coda: si creerebbe un ciclo che blocca la finestra
-            pass
-        if not closing:
-            root.after(100, drain_queue)
-
-    root.after(100, drain_queue)
-
-    # Avvia la GUI e chiude i bot alla chiusura della finestra
-    root.protocol("WM_DELETE_WINDOW", lambda: stop_all_bots(root))
-
-    # Avvia la GUI
-    root.mainloop()
-
-
 def start_bots():
     with open(os.path.join(BASE_DIR, "config.json"), "r") as json_file:
         config = json.load(json_file)
@@ -184,6 +99,9 @@ def start_bots():
 
 
 if __name__ == "__main__":
+    # i font del tema vanno registrati prima di creare la finestra
+    ui_theme.load_fonts()
+
     output_queue = queue.Queue(maxsize=10000)
     # con pythonw stdout/stderr sono None, quindi vanno gestiti
     sys.stdout = ConsoleRedirector(output_queue, sys.stdout)
@@ -200,5 +118,5 @@ if __name__ == "__main__":
     # Esegui i bot in thread separati
     start_bots()
 
-    # Avvia la GUI
-    launch_gui(output_queue)
+    # Avvia la finestra di controllo
+    ConsoleWindow(output_queue, stop_all_bots).avvia()
